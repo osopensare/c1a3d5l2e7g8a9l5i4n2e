@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <title>CASA delle GALLINE</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f4f5f7;
+      color: #1a1a1a;
+      min-height: 100vh;
+      padding: 1.25rem;
+    }
+    .app { max-width: 400px; margin: 0 auto; }
+
+    /* Header */
+    .header { display: flex; align-items: center; gap: 12px; margin-bottom: 1.25rem; }
+    .header-icon { font-size: 32px; line-height: 1; }
+    .header h1 { font-size: 22px; font-weight: 600; color: #1a1a1a; }
+    .header p { font-size: 13px; color: #6b7280; }
+
+    /* Status row */
+    .status-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 1rem; }
+    .status-card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 10px 14px;
+      border: 1px solid #e5e7eb;
+    }
+    .status-label { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 5px; }
+    .status-value { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 7px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #d1d5db; flex-shrink: 0; }
+    .dot.connected { background: #16a34a; box-shadow: 0 0 0 3px #dcfce7; }
+    .dot.disconnected { background: #dc2626; box-shadow: 0 0 0 3px #fee2e2; }
+
+    /* Section card */
+    .section-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .section-title i { font-size: 14px; }
+
+    /* Command buttons */
+    .cmd-btn {
+      width: 100%;
+      padding: 14px 16px;
+      font-size: 15px;
+      font-weight: 500;
+      border-radius: 10px;
+      border: 1.5px solid #e5e7eb;
+      background: #fff;
+      color: #374151;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      transition: background 0.12s, transform 0.08s;
+    }
+    .cmd-btn:last-of-type { margin-bottom: 10px; }
+    .cmd-btn i { font-size: 18px; }
+    .cmd-btn:active { transform: scale(0.98); }
+
+    .cmd-btn.apertura { border-color: #16a34a; color: #15803d; }
+    .cmd-btn.apertura:hover { background: #f0fdf4; }
+    .cmd-btn.chiusura { border-color: #2563eb; color: #1d4ed8; }
+    .cmd-btn.chiusura:hover { background: #eff6ff; }
+    .cmd-btn.stop { border-color: #dc2626; color: #b91c1c; }
+    .cmd-btn.stop:hover { background: #fef2f2; }
+
+    .status-text {
+      width: 100%;
+      padding: 10px 14px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #6b7280;
+      text-align: center;
+      font-style: italic;
+      margin-top: 4px;
+    }
+
+    /* Sensors */
+    .info-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .info-field {
+      background: #f9fafb;
+      border-radius: 10px;
+      padding: 10px 14px;
+      border: 1px solid #e5e7eb;
+    }
+    .info-field label { font-size: 11px; color: #9ca3af; display: block; margin-bottom: 3px; }
+    .info-field span { font-size: 18px; font-weight: 600; color: #1a1a1a; }
+
+    .aggiorna-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      color: #6b7280;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .aggiorna-btn:hover { background: #f3f4f6; }
+    .aggiorna-btn i { font-size: 15px; }
+
+    /* Param toggle */
+    .param-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #374151;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .param-toggle i.ti-chevron-down { margin-left: auto; font-size: 16px; color: #9ca3af; transition: transform 0.2s; }
+    .param-toggle.open i.ti-chevron-down { transform: rotate(180deg); }
+    .param-toggle i:first-child { font-size: 16px; color: #6b7280; }
+
+    .params-body { margin-top: 1rem; border-top: 1px solid #f3f4f6; padding-top: 1rem; display: none; }
+
+    .sub-title {
+      font-size: 11px; font-weight: 600; color: #9ca3af;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      margin-bottom: 0.6rem;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .sub-title i { font-size: 13px; }
+
+    .param-row { margin-bottom: 0.65rem; }
+    .param-row label { font-size: 12px; color: #6b7280; display: block; margin-bottom: 4px; }
+    .param-row input[type=time],
+    .param-row input[type=text] {
+      width: 100%;
+      padding: 9px 12px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #1a1a1a;
+      outline: none;
+    }
+    .param-row input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px #eef2ff; }
+
+    /* Notification grid */
+    .notify-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0.5rem 0 1rem; }
+    .notify-item {
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 8px 4px;
+      border: 1px solid #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      font-size: 11px;
+      color: #6b7280;
+      text-align: center;
+      transition: border-color 0.1s;
+    }
+    .notify-item:has(input:checked) { border-color: #16a34a; background: #f0fdf4; color: #15803d; }
+    .notify-item input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; accent-color: #16a34a; }
+
+    /* Save / cancel */
+    .btn-row { display: flex; gap: 8px; }
+    .btn-save {
+      flex: 1; padding: 11px;
+      background: #16a34a; color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 500; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: background 0.1s;
+    }
+    .btn-save:hover { background: #15803d; }
+    .btn-cancel {
+      flex: 1; padding: 11px;
+      background: #f3f4f6; color: #6b7280;
+      border: 1px solid #e5e7eb; border-radius: 10px;
+      font-size: 14px; cursor: pointer;
+      transition: background 0.1s;
+    }
+    .btn-cancel:hover { background: #e5e7eb; }
+  </style>
+</head>
+<body onload="connette()">
+
+<div class="app">
+
+  <div class="header">
+    <div class="header-icon">🐔</div>
+    <div>
+      <h1>Casa delle galline</h1>
+      <p>Porta del pollaio</p>
+    </div>
+  </div>
+
+  <div class="status-row">
+    <div class="status-card">
+      <div class="status-label">MQTT</div>
+      <div class="status-value">
+        <span class="dot disconnected" id="dot-mqtt"></span>
+        <span id="txt-mqtt">Non connesso</span>
+      </div>
+    </div>
+    <div class="status-card">
+      <div class="status-label">ESP</div>
+      <div class="status-value">
+        <span class="dot disconnected" id="dot-esp"></span>
+        <span id="txt-esp">Non connesso</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comandi porta -->
+  <div class="section-card" id="div_com">
+    <div class="section-title"><i class="ti ti-door"></i> Comandi porta</div>
+    <button class="cmd-btn apertura" onclick="apertura()">
+      <i class="ti ti-arrow-up"></i> Apertura
+    </button>
+    <button class="cmd-btn stop" onclick="stop()">
+      <i class="ti ti-player-stop"></i> STOP
+    </button>
+    <button class="cmd-btn chiusura" onclick="chiusura()">
+      <i class="ti ti-arrow-down"></i> Chiusura
+    </button>
+    <div class="status-text" id="comandi">—</div>
+  </div>
+
+  <!-- Sensori -->
+  <div class="section-card">
+    <div class="section-title"><i class="ti ti-thermometer"></i> Sensori</div>
+    <div class="info-row">
+      <div class="info-field">
+        <label>Temperatura</label>
+        <span id="temp">—</span>
+      </div>
+      <div class="info-field">
+        <label>Ora</label>
+        <span id="ore">—</span>
+      </div>
+    </div>
+    <button class="aggiorna-btn" onclick="richiestaTemp()">
+      <i class="ti ti-refresh"></i> Aggiorna
+    </button>
+  </div>
+
+  <!-- Parametri -->
+  <div class="section-card">
+    <button class="param-toggle" id="param-toggle-btn" onclick="toggleParams()">
+      <i class="ti ti-settings"></i>
+      <span>Parametri</span>
+      <i class="ti ti-chevron-down"></i>
+    </button>
+
+    <div class="params-body" id="div_par">
+
+      <div class="sub-title"><i class="ti ti-clock"></i> Orari automatici</div>
+      <div class="param-row">
+        <label>Apertura</label>
+        <input type="time" id="ore_ap_mod">
+      </div>
+      <div class="param-row">
+        <label>Chiusura</label>
+        <input type="time" id="ore_ch_mod">
+      </div>
+      <div class="param-row">
+        <label>Millisecondi apertura</label>
+        <input type="text" id="mil_ap_mod" placeholder="es. 5000">
+      </div>
+      <div class="param-row" style="margin-bottom:1rem">
+        <label>Millisecondi chiusura</label>
+        <input type="text" id="mil_ch_mod" placeholder="es. 5000">
+      </div>
+
+      <div class="sub-title"><i class="ti ti-bell"></i> Notifiche</div>
+      <div class="notify-grid">
+        <label class="notify-item">
+          <input type="checkbox" id="ape_noti">
+          <span>Apertura</span>
+        </label>
+        <label class="notify-item">
+          <input type="checkbox" id="chi_noti">
+          <span>Chiusura</span>
+        </label>
+        <label class="notify-item">
+          <input type="checkbox" id="stop_noti">
+          <span>Stop</span>
+        </label>
+        <label class="notify-item">
+          <input type="checkbox" id="extra_noti">
+          <span>Extracorsa</span>
+        </label>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-save" onclick="pSalva()"><i class="ti ti-check"></i> Salva</button>
+        <button class="btn-cancel" onclick="pAnnulla()">Annulla</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  //--- Impostazione broker (da compilare) ---
+  let ClusterURL = "6a80c715d2c749acad129ea202fd573a.s1.eu.hivemq.cloud";
+  let user = 'osopensare';
+  let psw = 'Hivemq26!@yahoo.it';
+  let porta = 8884;
+
+  //--- Variabili stato ---
+  let stato = "";
+  let ore_ap_att, ore_ch_att, mil_ap_att, mil_ch_att;
+  let notiAP = 0, notiCH = 0, notiST = 0, notiEX = 0;
+  let client;
+
+  function setStatus(txtId, dotId, connected) {
+    document.getElementById(txtId).textContent = connected ? 'Connesso' : 'Non connesso';
+    const dot = document.getElementById(dotId);
+    dot.className = 'dot ' + (connected ? 'connected' : 'disconnected');
+  }
+
+  function connette() {
+    if (!ClusterURL) return;
+    client = mqtt.connect('wss://' + ClusterURL + ':' + porta + '/mqtt', {
+      username: user,
+      password: psw
+    });
+    client.on('connect', function () {
+      setStatus('txt-mqtt', 'dot-mqtt', true);
+      sottoscrivi();
+      client.publish("HE/statoAPP", "1");
+    });
+    client.on('error', function (error) {
+      console.log(error);
+    });
+    client.on('end', function () {});
+    client.on('message', function (topic, message) {
+      messaggi(topic, message.toString());
+    });
+  }
+
+  function sottoscrivi() {
+    const topics = [
+      "EH/statoESP", "EH/statoPORTA", "EH/apertura", "EH/chiusura", "EH/stop",
+      "EH/oreAP", "EH/oreCH", "EH/milAP", "EH/milCH",
+      "EH/apeNoti", "EH/chiNoti", "EH/stopNoti", "EH/extraNoti",
+      "EH/temperatura", "EH/ore"
+    ];
+    topics.forEach(t => client.subscribe(t));
+  }
+
+  function messaggi(topic, messaggio) {
+    if (topic == "EH/statoPORTA") {
+      setStatus('txt-esp', 'dot-esp', true);
+      stato = "CONNESSO";
+      document.getElementById("comandi").textContent = messaggio;
+    }
+    if (topic == "EH/oreAP") { ore_ap_att = messaggio; document.getElementById("ore_ap_mod").value = messaggio; }
+    if (topic == "EH/oreCH") { ore_ch_att = messaggio; document.getElementById("ore_ch_mod").value = messaggio; }
+    if (topic == "EH/milAP") { mil_ap_att = messaggio; document.getElementById("mil_ap_mod").value = messaggio; }
+    if (topic == "EH/milCH") { mil_ch_att = messaggio; document.getElementById("mil_ch_mod").value = messaggio; }
+    if (topic == "EH/apeNoti") { document.getElementById("ape_noti").checked = (messaggio == '1'); notiAP = (messaggio == '1'); }
+    if (topic == "EH/chiNoti") { document.getElementById("chi_noti").checked = (messaggio == '1'); notiCH = (messaggio == '1'); }
+    if (topic == "EH/stopNoti") { document.getElementById("stop_noti").checked = (messaggio == '1'); notiST = (messaggio == '1'); }
+    if (topic == "EH/extraNoti") { document.getElementById("extra_noti").checked = (messaggio == '1'); notiEX = (messaggio == '1'); }
+    if (topic == "EH/temperatura") { document.getElementById("temp").textContent = messaggio; }
+    if (topic == "EH/ore") { document.getElementById("ore").textContent = messaggio; }
+  }
+
+  function toggleParams() {
+    const body = document.getElementById("div_par");
+    const btn = document.getElementById("param-toggle-btn");
+    const isOpen = body.style.display === 'block';
+    body.style.display = isOpen ? 'none' : 'block';
+    btn.classList.toggle("open", !isOpen);
+  }
+
+  function pSalva() {
+    if (!client) { toggleParams(); return; }
+    const ap = document.getElementById("ore_ap_mod").value;
+    const ch = document.getElementById("ore_ch_mod").value;
+    const ta = document.getElementById("mil_ap_mod").value;
+    const tc = document.getElementById("mil_ch_mod").value;
+    if (ap != ore_ap_att) client.publish("HE/oreAPmod", ap);
+    if (ch != ore_ch_att) client.publish("HE/oreCHmod", ch);
+    if (ta != mil_ap_att) client.publish("HE/milAPmod", ta);
+    if (tc != mil_ch_att) client.publish("HE/milCHmod", tc);
+    const ape = document.getElementById("ape_noti").checked;
+    const chi = document.getElementById("chi_noti").checked;
+    const stp = document.getElementById("stop_noti").checked;
+    const ext = document.getElementById("extra_noti").checked;
+    if (notiAP != ape) { client.publish("HE/apeNoti", ape ? '1' : '0'); notiAP = ape; }
+    if (notiCH != chi) { client.publish("HE/chiNoti", chi ? '1' : '0'); notiCH = chi; }
+    if (notiST != stp) { client.publish("HE/stopNoti", stp ? '1' : '0'); notiST = stp; }
+    if (notiEX != ext) { client.publish("HE/extraNoti", ext ? '1' : '0'); notiEX = ext; }
+    toggleParams();
+  }
+
+  function pAnnulla() { toggleParams(); }
+  function apertura() { if (client) client.publish("HE/apertura", "apertura"); }
+  function stop() { if (client) client.publish("HE/stop", "stop"); }
+  function chiusura() { if (client) client.publish("HE/chiusura", "chiusura"); }
+  function richiestaTemp() { if (client) client.publish("HE/rich_temp", "1"); }
+</script>
+
+</body>
+</html>
