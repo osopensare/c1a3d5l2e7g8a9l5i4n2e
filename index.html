@@ -293,11 +293,11 @@
         <input type="time" id="ore_ch_mod">
       </div>
       <div class="param-row">
-        <label>Millisecondi apertura</label>
+        <label>Secondi apertura</label>
         <input type="text" id="mil_ap_mod" placeholder="es. 5000">
       </div>
       <div class="param-row" style="margin-bottom:1rem">
-        <label>Millisecondi chiusura</label>
+        <label>Secondi chiusura</label>
         <input type="text" id="mil_ch_mod" placeholder="es. 5000">
       </div>
 
@@ -387,8 +387,8 @@
     }
     if (topic == "EH/oreAP") { ore_ap_att = messaggio; document.getElementById("ore_ap_mod").value = messaggio; }
     if (topic == "EH/oreCH") { ore_ch_att = messaggio; document.getElementById("ore_ch_mod").value = messaggio; }
-    if (topic == "EH/milAP") { mil_ap_att = messaggio; document.getElementById("mil_ap_mod").value = messaggio; }
-    if (topic == "EH/milCH") { mil_ch_att = messaggio; document.getElementById("mil_ch_mod").value = messaggio; }
+    if (topic == "EH/milAP") { mil_ap_att = messaggio; document.getElementById("mil_ap_mod").value = messaggio/1000; }
+    if (topic == "EH/milCH") { mil_ch_att = messaggio; document.getElementById("mil_ch_mod").value = messaggio/1000; }
     if (topic == "EH/apeNoti") { document.getElementById("ape_noti").checked = (messaggio == '1'); notiAP = (messaggio == '1'); }
     if (topic == "EH/chiNoti") { document.getElementById("chi_noti").checked = (messaggio == '1'); notiCH = (messaggio == '1'); }
     if (topic == "EH/stopNoti") { document.getElementById("stop_noti").checked = (messaggio == '1'); notiST = (messaggio == '1'); }
@@ -409,8 +409,10 @@
     if (!client) { toggleParams(); return; }
     const ap = document.getElementById("ore_ap_mod").value;
     const ch = document.getElementById("ore_ch_mod").value;
-    const ta = document.getElementById("mil_ap_mod").value;
-    const tc = document.getElementById("mil_ch_mod").value;
+    const ta_n = Number(document.getElementById("mil_ap_mod").value)*1000;
+    const ta = ta_n.toString();
+    const tc_n = Number(document.getElementById("mil_ch_mod").value)*1000;
+    const tc = tc_n.toString();
     if (ap != ore_ap_att) client.publish("HE/oreAPmod", ap);
     if (ch != ore_ch_att) client.publish("HE/oreCHmod", ch);
     if (ta != mil_ap_att) client.publish("HE/milAPmod", ta);
