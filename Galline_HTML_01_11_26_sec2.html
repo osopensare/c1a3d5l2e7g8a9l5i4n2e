@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Porta del pollaio</title>
+<script src="https://unpkg.com/mqtt@5.10.4/dist/mqtt.min.js"></script>
+<style>
+*{box-sizing:border-box}body{font:16px system-ui,sans-serif;background:#f2f6f4;color:#193b30;margin:0;padding:20px}main{max-width:510px;margin:auto}h1{font-size:26px}section,details{background:white;padding:20px;border-radius:14px;margin:14px 0;box-shadow:0 3px 16px #183b3010}label{display:block;margin:12px 0 5px}input,select,button{font:inherit;border-radius:7px;padding:10px;border:1px solid #bccdc5;max-width:100%}input:not([type=checkbox]),select{width:100%}button{background:#16734e;color:white;cursor:pointer;border:0}button:disabled{opacity:.45;cursor:default}.commands{display:grid;gap:10px}.commands button{font-size:23px;padding:16px}.commands .stop{background:#af322c}.row{display:flex;gap:12px}.row>*{flex:1;min-width:0}.status{display:flex;justify-content:space-between;gap:8px;font-weight:600;font-size:14px}.badge{padding:7px;border-radius:6px;background:#eee;color:#733}.online{background:#e1f3e8;color:#185c39}#door{font-weight:600;padding:14px 0;overflow-wrap:anywhere}.data{display:grid;grid-template-columns:1fr 1fr;gap:10px}.data span{font-weight:bold}small,.muted{color:#576c62}#message{min-height:24px;color:#963127;white-space:pre-wrap}fieldset{border:0;padding:0;margin:0}fieldset label.check{display:flex;gap:8px;align-items:center}fieldset input[type=checkbox]{width:20px;height:20px}[hidden]{display:none!important}.secondary{background:#62776c}summary{cursor:pointer;font-weight:600}#version{font-size:12px;overflow-wrap:anywhere}
+</style></head><body><main>
+<h1>Porta del pollaio</h1>
+<details id="connection"><summary>Connessione al broker</summary>
+<form id="connectForm"><label for="host">Indirizzo broker</label><input id="host" value="73a.s1.eu.hivemq.cloud" placeholder="nome.cloud.hivemq.com" required autocomplete="off">
+<label for="port">Porta WebSocket sicura</label><input id="port" type="number" min="1" max="65535" value="8884" required>
+<label for="username">Utente MQTT</label><input id="username" value="nuvolo" autocomplete="username" required>
+<label for="password">Password MQTT</label><input id="password" type="text" value="nuvola" autocomplete="off" required>
+<p><button type="submit">Connetti</button></p><small>Usa lo stesso broker configurato sull’ESP. I valori predefiniti sono modificabili. La password è visibile in chiaro e inclusa nel file HTML.</small></form></details>
+<section><div class="status"><span id="broker" class="badge">MQTT: disconnesso</span><span id="esp" class="badge">ESP: non disponibile</span></div>
+<div id="door">In attesa di dati</div><div class="commands"><button id="openButton" disabled>Apertura</button><button id="stopButton" class="stop" disabled>STOP</button><button id="closeButton" disabled>Chiusura</button></div></section>
+<section><div class="data"><div>Data e ora<br><span id="clock">—</span></div><div>Modalità<br><span id="currentMode">—</span></div><div>Temperatura ambiente<br><span id="ambient">—</span></div><div>Temperatura CPU<br><span id="cpu">—</span></div><div>Apertura prevista<br><span id="effectiveOpen">—</span></div><div>Chiusura prevista<br><span id="effectiveClose">—</span></div></div>
+<p class="row"><button id="refreshButton" disabled>Aggiorna</button><button id="parametersButton" disabled>Parametri</button></p><div id="version" class="muted"></div></section>
+<section id="parameters" hidden><h2>Parametri</h2><form id="settingsForm"><fieldset id="fields">
+<label for="mode">Modalità</label><select id="mode"><option value="auto">Automatico (alba e tramonto)</option><option value="manu">Manuale (orari fissi)</option></select>
+<div id="automatic"><div class="row"><div><label>Alba</label><input id="sunrise" readonly></div><div><label>Tramonto</label><input id="sunset" readonly></div></div>
+<div class="row"><div><label for="correctionOpen">Correzione alba (min)</label><input type="number" id="correctionOpen" min="-720" max="720" step="1" required></div><div><label for="correctionClose">Correzione tramonto (min)</label><input type="number" id="correctionClose" min="-720" max="720" step="1" required></div></div>
+<p>Anteprima: apertura <b id="previewOpen">—</b>, chiusura <b id="previewClose">—</b></p><small id="astronomyHint"></small></div>
+<div id="manual"><div class="row"><div><label for="open">Ora apertura</label><input type="time" id="open" required></div><div><label for="close">Ora chiusura</label><input type="time" id="close" required></div></div></div>
+<small>Gli orari fissi restano memorizzati anche in modalità automatica.</small>
+<div class="row"><div><label for="maxOpen">Tempo massimo apertura (s)</label><input type="number" id="maxOpen" min="0.5" max="120" step="0.001" required></div><div><label for="maxClose">Tempo massimo chiusura (s)</label><input type="number" id="maxClose" min="0.5" max="120" step="0.001" required></div></div>
+<p><small>Da 0,5 a 120 s. Imposta un limite adatto alla corsa reale della porta.</small></p>
+<label class="check"><input id="notifyOpen" type="checkbox"> Notifiche apertura</label><label class="check"><input id="notifyClose" type="checkbox"> Notifiche chiusura</label><label class="check"><input id="notifyStop" type="checkbox"> Notifiche STOP</label><label class="check"><input id="notifyExtra" type="checkbox"> Notifiche extracorsa / guasti</label>
+</fieldset><p class="row"><button id="saveButton" type="submit">Salva</button><button id="cancelButton" type="button" class="secondary">Annulla</button></p></form></section>
+<p id="message" role="status" aria-live="polite"></p>
+</main><script>
+'use strict';
+let client=null, snapshot=null, lastSeen=0, editing=false, pendingId=null, saveTimer=null;
+const $=id=>document.getElementById(id);
+const configKeys=['mode','open','close','maxOpen','maxClose','correctionOpen','correctionClose','notifyOpen','notifyClose','notifyStop','notifyExtra'];
+const booleanKeys=['notifyOpen','notifyClose','notifyStop','notifyExtra'];
+const numberKeys=['maxOpen','maxClose','correctionOpen','correctionClose'];
+function message(text){$('message').textContent=text;}
+function isOnline(){return !!(client && client.connected && lastSeen && Date.now()-lastSeen<20000);}
+function controls(){
+  const online=isOnline();
+  if(snapshot)$('door').textContent=(online?'':'Ultimo stato: ')+(snapshot.state||'non disponibile');
+  $('openButton').disabled=!online || !snapshot || !snapshot.configValid;
+  $('closeButton').disabled=$('openButton').disabled;
+  // STOP remains available while MQTT is connected even if the ESP status is stale.
+  $('stopButton').disabled=!(client && client.connected);
+  $('refreshButton').disabled=!(client && client.connected);
+  $('parametersButton').disabled=!online || !snapshot || !!pendingId;
+  $('saveButton').disabled=!online || !!pendingId || !!(snapshot && snapshot.moving);
+  $('cancelButton').disabled=!!pendingId;
+  $('fields').disabled=!!pendingId;
+  $('broker').textContent='MQTT: '+(client && client.connected?'connesso':'disconnesso');
+  $('broker').className='badge'+(client && client.connected?' online':'');
+  $('esp').textContent='ESP: '+(online?'connesso':'non disponibile');
+  $('esp').className='badge'+(online?' online':'');
+}
+function disconnected(){lastSeen=0;controls();}
+function publish(topic,payload){
+  if(!client || !client.connected){message('Broker non connesso.');return false;}
+  client.publish(topic,payload,{qos:0,retain:false},error=>{if(error) message('Invio non riuscito: '+error.message);});
+  return true;
+}
+function connect(event){
+  if(event)event.preventDefault();
+  const host=$('host').value.trim(), port=Number($('port').value);
+  if(!/^[a-zA-Z0-9.-]+$/.test(host) || !Number.isInteger(port) || port<1 || port>65535){message('Inserisci il nome del broker senza https:// e una porta valida.');return;}
+  if(typeof mqtt==='undefined'){message('Libreria MQTT non caricata: verifica la connessione Internet e riapri la pagina.');return;}
+  if(client){client.removeAllListeners();client.end(true);}
+  disconnected(); snapshot=null; editing=false; $('parameters').hidden=true;
+  if(saveTimer)clearTimeout(saveTimer); pendingId=null;
+  const own=mqtt.connect('wss://'+host+':'+port+'/mqtt',{
+    username:$('username').value,password:$('password').value,
+    clientId:'GallineWeb-'+Math.random().toString(16).slice(2),
+    reconnectPeriod:3000,connectTimeout:10000,clean:true,queueQoSZero:false
+  });
+  client=own;
+  own.on('connect',()=>{
+    if(client!==own)return;
+    own.subscribe(['EH/config','EH/configAck','EH/statoESP'],{qos:0},(error,granted)=>{
+      if(error || !granted || granted.some(g=>g.qos===128)){message('Sottoscrizione rifiutata: controlla i permessi MQTT.');return;}
+      publish('HE/statoAPP','1');
+    });
+    $('connection').open=false;message('Broker connesso. In attesa dell’ESP…');controls();
+  });
+  own.on('message',(topic,buffer)=>{if(client===own) receive(topic,buffer.toString());});
+  own.on('offline',disconnected);own.on('close',disconnected);
+  own.on('error',error=>message('Connessione MQTT: '+error.message));
+  controls();
+}
+function receive(topic,payload){
+  if(topic==='EH/statoESP'){
+    // A retained online message alone is not evidence of a live ESP.
+    if(payload==='offline')disconnected();
+    else if(payload==='online')publish('HE/statoAPP','1');
+    return;
+  }
+  let d;try{d=JSON.parse(payload);}catch{message('Risposta ESP non valida.');return;}
+  if(topic==='EH/configAck'){
+    if(!pendingId || d.id!==pendingId)return;
+    clearTimeout(saveTimer);saveTimer=null;pendingId=null;
+    if(d.ok===true){editing=false;$('parameters').hidden=true;message('Parametri salvati sull’ESP.');publish('HE/statoAPP','1');}
+    else message('Salvataggio rifiutato: '+(d.message||'controlla i valori.'));
+    controls();return;
+  }
+  if(topic!=='EH/config' || typeof d.version!=='string' || !configKeys.every(k=>Object.prototype.hasOwnProperty.call(d,k)))return;
+  snapshot=d;lastSeen=Date.now();
+  if($('message').textContent==='Broker connesso. In attesa dell’ESP…')message('');
+  $('door').textContent=d.state||'Stato non disponibile';
+  $('clock').textContent=d.clockValid?d.date+' '+d.time:'Ora non sincronizzata';
+  $('currentMode').textContent=d.mode==='auto'?'Automatico':'Manuale';
+  $('ambient').textContent=typeof d.ambient==='number' && Number.isFinite(d.ambient)?d.ambient.toFixed(1)+' °C':'Sensore non disponibile';
+  $('cpu').textContent=typeof d.cpu==='number' && Number.isFinite(d.cpu)?d.cpu.toFixed(1)+' °C':'—';
+  $('effectiveOpen').textContent=d.effectiveOpen||'—';$('effectiveClose').textContent=d.effectiveClose||'—';
+  $('version').textContent=d.version;
+  $('sunrise').value=d.sunrise||'';$('sunset').value=d.sunset||'';
+  $('astronomyHint').textContent=!d.coordinatesValid?'Coordinate da configurare sull’ESP via seriale.':!d.sunValid?'Alba e tramonto non disponibili: attendi la sincronizzazione dell’ora.':'';
+  if(!editing)fillForm(); else preview();
+  if(!d.configValid && !editing)message('Imposta e salva orari e tempi di corsa per abilitare il motore.');
+  controls();
+}
+function fillForm(){
+  if(!snapshot)return;
+  for(const key of configKeys){if(booleanKeys.includes(key))$(key).checked=snapshot[key]===true;else $(key).value=snapshot[key]==null?'':(key==='maxOpen' || key==='maxClose')?snapshot[key]/1000:snapshot[key];}
+  showMode();
+}
+function showMode(){
+  const auto=$('mode').value==='auto';$('automatic').hidden=!auto;
+  // Keep manual times editable even in auto: both are validated and saved.
+  $('manual').hidden=false;preview();
+}
+function corrected(time,offset){
+  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time) || !Number.isInteger(offset))return '—';
+  const [h,m]=time.split(':').map(Number);const total=((h*60+m+offset)%1440+1440)%1440;
+  return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
+}
+function preview(){
+  $('previewOpen').textContent=corrected($('sunrise').value,Number($('correctionOpen').value));
+  $('previewClose').textContent=corrected($('sunset').value,Number($('correctionClose').value));
+}
+function edit(){if(!isOnline() || !snapshot)return;editing=true;fillForm();$('parameters').hidden=false;message('Modifica i valori e premi Salva.');controls();}
+function cancel(){if(pendingId)return;editing=false;fillForm();$('parameters').hidden=true;message('Modifiche annullate.');controls();}
+function save(event){
+  if(event)event.preventDefault();
+  if(!isOnline() || !snapshot){message('ESP non disponibile. Nessun parametro inviato.');return;}
+  if(pendingId)return;
+  if(snapshot.moving){message('Ferma il motore prima di salvare.');return;}
+  if(!$('settingsForm').reportValidity())return;
+  const d={};for(const k of configKeys)d[k]=booleanKeys.includes(k)?$(k).checked:numberKeys.includes(k)?Number($(k).value):$(k).value;
+  // The form uses seconds; the ESP protocol and validation use integer milliseconds.
+  d.maxOpen=Math.round(d.maxOpen*1000);d.maxClose=Math.round(d.maxClose*1000);
+  if(numberKeys.some(k=>!Number.isInteger(d[k])) || !['auto','manu'].includes(d.mode) ||
+    d.maxOpen<500 || d.maxOpen>120000 || d.maxClose<500 || d.maxClose>120000 ||
+    d.correctionOpen < -720 || d.correctionOpen > 720 || d.correctionClose < -720 || d.correctionClose > 720 ||
+    !/^([01]\d|2[0-3]):[0-5]\d$/.test(d.open) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(d.close)){
+    message('Controlla orari, tempi di corsa e correzioni.');return;
+  }
+  if(d.mode==='auto' && !snapshot.coordinatesValid){message('Configura prima latitudine e longitudine sull’ESP.');return;}
+  if((d.mode==='manu' && d.open===d.close) || (d.mode==='auto' && snapshot.sunValid &&
+    corrected(snapshot.sunrise,d.correctionOpen)===corrected(snapshot.sunset,d.correctionClose))){message('Apertura e chiusura devono avere orari diversi.');return;}
+  pendingId=Date.now().toString(36)+'-'+Math.random().toString(16).slice(2);d.id=pendingId;
+  if(!publish('HE/config',JSON.stringify(d))){pendingId=null;controls();return;}
+  message('Salvataggio in corso…');controls();
+  saveTimer=setTimeout(()=>{
+    pendingId=null;saveTimer=null;controls();
+    message('Conferma non ricevuta. Richiedi un aggiornamento per verificare se i valori sono stati salvati.');publish('HE/statoAPP','1');
+  },12000);
+}
+$('connectForm').addEventListener('submit',connect);
+$('settingsForm').addEventListener('submit',save);
+$('parametersButton').addEventListener('click',edit);$('cancelButton').addEventListener('click',cancel);
+$('mode').addEventListener('change',showMode);
+$('correctionOpen').addEventListener('input',preview);$('correctionClose').addEventListener('input',preview);
+$('openButton').addEventListener('click',()=>{if(isOnline())publish('HE/apertura',JSON.stringify({token:snapshot.token}));});
+$('closeButton').addEventListener('click',()=>{if(isOnline())publish('HE/chiusura',JSON.stringify({token:snapshot.token}));});
+$('stopButton').addEventListener('click',()=>publish('HE/stop','stop'));
+$('refreshButton').addEventListener('click',()=>publish('HE/rich_temp','1'));
+setInterval(()=>{controls();},1000);
+setInterval(()=>{if(client && client.connected)publish('HE/statoAPP','1');},10000);
+$('connection').open=true;controls();
+</script></body></html>
