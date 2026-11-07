@@ -7,10 +7,10 @@
 </style></head><body><main>
 <h1>Porta del pollaio</h1>
 <details id="connection"><summary>Connessione al broker</summary>
-<form id="connectForm"><label for="host">Indirizzo broker</label><input id="host" placeholder="nome.cloud.hivemq.com" required autocomplete="off">
+<form id="connectForm"><label for="host">Indirizzo broker</label><input id="host" value="6a80c715d2c749acad129ea202fd573a.s1.eu.hivemq.cloud"placeholder="nome.cloud.hivemq.com" required autocomplete="off">
 <label for="port">Porta WebSocket sicura</label><input id="port" type="number" min="1" max="65535" value="8884" required>
-<label for="username">Utente MQTT</label><input id="username" autocomplete="username" required>
-<label for="password">Password MQTT</label><input id="password" type="password" autocomplete="current-password" required>
+<label for="username">Utente MQTT</label><input id="username" value="osopensare" autocomplete="username" required>
+<label for="password">Password MQTT</label><input id="password" type="password" value="Hivemq26!@yahoo.it" autocomplete="current-password" required>
 <p><button type="submit">Connetti</button></p><small>Usa lo stesso broker configurato sull’ESP. La password non viene salvata dalla pagina.</small></form></details>
 <section><div class="status"><span id="broker" class="badge">MQTT: disconnesso</span><span id="esp" class="badge">ESP: non disponibile</span></div>
 <div id="door">In attesa di dati</div><div class="commands"><button id="openButton" disabled>Apertura</button><button id="stopButton" class="stop" disabled>STOP</button><button id="closeButton" disabled>Chiusura</button></div></section>
